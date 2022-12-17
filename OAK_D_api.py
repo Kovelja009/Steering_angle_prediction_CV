@@ -53,6 +53,8 @@ class OAK_D:
         self._device = dai.Device(self._pipeline)
         self._video = self._device.getOutputQueue(name="video", maxSize=1, blocking=False)
         self.fps_handler = FPSHandler()
+        self.height = self._camRgb.getVideoHeight()
+        self.width = self._camRgb.getVideoWidth()
 
     def get_color_frame(self, show_fps=False):
         video_in = self._video.get()
