@@ -11,6 +11,17 @@ import math
 # triangle = np.array([[(int(width * 0.15), height), (int(width * 0.35), int(height * 0.4)),
 #                       (int(width * 0.6), int(height * 0.4)), (int(width * 0.85), height)]])
 
+class State:
+    # possible states: 0 <- initial polygon, 1 <- one lane detected, 2 <- two lanes detected
+    def __init__(self, height, width):
+        self.prev_angle = 0
+        self.prev_state = 0
+        self.n_frames = 0
+        self.initial_shape = np.array(
+            [[(int(width * 0.15), height), (int(width * 0.35), int(height * 0.4)),
+              (int(width * 0.6), int(height * 0.4)), (int(width * 0.85), height)]])
+        self.last_shape = self.initial_shape
+
 
 class AngleCalculator:
     def __init__(self, height, width, resize=1.0, draw_lines=False):
@@ -20,9 +31,7 @@ class AngleCalculator:
         self.height = int(height * resize)
         self.width = int(width * resize)
         self.EPSYLON = 0.000001
-        self.initial_polygon = np.array(
-            [[(int(self.width * 0.15), self.height), (int(self.width * 0.35), int(self.height * 0.4)),
-              (int(self.width * 0.6), int(self.height * 0.4)), (int(self.width * 0.85), self.height)]])
+        self.state = State(self.height, self.width)
 
     def get_angle(self, image):
         if self.resize != 1.0:
@@ -39,7 +48,7 @@ class AngleCalculator:
         return image, angle
 
     def _angle_calculator(self, image, left_line, right_line):
-        # if angle is 90 degrees than k is infinite, so we add EPSYLON to ensure that we aren't deviding with zero
+        # if angle is 90 degrees than k is infinite, so we add EPSYLON to ensure that we aren't deviding by zero
         k_left = 0
         k_right = 0
         n_left = 0
@@ -66,7 +75,9 @@ class AngleCalculator:
         return central_line, round(angle, 2)
 
     def _dynamic_ROI(self):
-        return self.initial_polygon
+        if self.state.n_frames >= 40: # should aproximately be about 2 sec
+            return self.state.initial_shape
+        return self.state.last_shape
 
     # y = kx + n  [k = slope, n = intercept]
     def _average_slope_intercept(self, image, lines):
@@ -104,7 +115,7 @@ class AngleCalculator:
 
     def _canny(self, image):
         gray_image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-        # blur = cv2.GaussianBlur(gray_image, (5, 5), 0)
+        # blur = cv2.GaussianBlur(gray_image, (5, 5), 0) # cv2.Canny already does blurring in
         canny = cv2.Canny(gray_image, 70, 150)
         cv2.imshow("canny", canny)
         return canny
@@ -124,12 +135,8 @@ class AngleCalculator:
         return combo_image
 
     def _resize(self, image):
-        width = int(image.shape[1] * self.resize)
-        height = int(image.shape[0] * self.resize)
-
-        dsize = (width, height)
-        # resize image
-        output = cv2.resize(image, dsize)
+        dim = (self.width, self.height)
+        output = cv2.resize(image, dim)
         return output
 
     def _make_coordinates(self, image, param):
