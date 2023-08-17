@@ -27,7 +27,7 @@ class FPSHandler:
 
 
 class OAK_D:
-    def __init__(self, fps=24):
+    def __init__(self, fps=24, width=720, height=480):
         # Create pipeline
         self._pipeline = dai.Pipeline()
 
@@ -38,9 +38,10 @@ class OAK_D:
         self._xoutVideo.setStreamName("video")
 
         # Properties
-        self._camRgb.setBoardSocket(dai.CameraBoardSocket.RGB)
+        self._camRgb.setBoardSocket(dai.CameraBoardSocket.CAM_A)
         self._camRgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
-        self._camRgb.setVideoSize(1920, 1080)
+        self._camRgb.setInterleaved(False)
+        self._camRgb.setVideoSize(width, height)
         self._camRgb.setFps(fps)
 
         self._xoutVideo.input.setBlocking(False)

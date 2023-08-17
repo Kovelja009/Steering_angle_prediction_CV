@@ -5,11 +5,12 @@ import cv2
 import numpy as np
 import math
 
+
 class State:
     # possible states: 0 <- initial polygon, 1 <- one lane detected, 2 <- two lanes detected
     def __init__(self, height, width):
         self.prev_angle = 0
-        self.straight_line = int(width / 2), int(height), int(width / 2), int(height/2)
+        self.straight_line = int(width / 2), int(height), int(width / 2), int(height / 2)
         self.prev_line = self.straight_line
         self.prev_state = 0
         self.n_frames = 0
@@ -93,9 +94,8 @@ class AngleCalculator:
         curr_angle = round(angle, 2)
 
         # does smoothing for steering by not allowing for great fluctuation between frames
-        adjusted_angle = round(self.state.prev_angle*self.decay + (1 - self.decay)*curr_angle, 2)
+        adjusted_angle = round(self.state.prev_angle * self.decay + (1 - self.decay) * curr_angle, 2)
         self.state.prev_angle = adjusted_angle
-
 
         return central_line, adjusted_angle
 
@@ -143,7 +143,7 @@ class AngleCalculator:
                 self.state.prev_state = 0
                 self.state.danger = False
                 self.state.n_frames = 0
-            else: # then just use previous shape <- trying to prevent noise
+            else:  # then just use previous shape <- trying to prevent noise
                 if self.state.n_frames == 9 and self.state.danger:
                     self.state.prev_state = 0
                 self.state.danger = True
@@ -158,7 +158,7 @@ class AngleCalculator:
             else:
                 self.state.last_shape = self._new_shape(right_line)
 
-        if not edge_case: # means we found both lines
+        if not edge_case:  # means we found both lines
             self.state.n_frames = 0
             self.state.danger = False
             self.state.prev_state = 2
@@ -240,30 +240,33 @@ class AngleCalculator:
 
 
 if __name__ == '__main__':
-    # oak_d = oak.OAK_D()
-    # img = plt.imread('eva02.png')
-    # plt.imshow(img)
-    # plt.show()
-    # while True:
-    #     frame = oak_d.get_color_frame(show_fps=True)
-    #     computed_frame, angle = get_angle(frame, 0.5)
-    #     cv2.imshow("VidraCar", computed_frame)
-    #     if cv2.waitKey(1) == ord('q'):
-    #         break
-
-    cap = cv2.VideoCapture("test_video5.mp4")
-    angle_calc = AngleCalculator(height=720, width=1280, resize=0.4, decay=0.7, draw_lines=True)
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
-
+    # pipeline for interacting with OAK-D camera
+    oak_d = oak.OAK_D()
+    angle_calc = AngleCalculator(height=1080, width=1920, resize=0.4, decay=0.7, draw_lines=True)
+    while True:
+        frame = oak_d.get_color_frame()
         computed_frame, angle = angle_calc.get_angle(frame)
-
         cv2.imshow("Vidra_car", computed_frame)
         print(f'Angle: {angle}')
         if cv2.waitKey(1) == ord('q'):
             break
-
-    cap.release()
     cv2.destroyAllWindows()
+
+    # pipeline for reading from classic video
+
+    # cap = cv2.VideoCapture("test_video5.mp4")
+    # angle_calc = AngleCalculator(height=720, width=1280, resize=0.4, decay=0.7, draw_lines=True)
+    # while cap.isOpened():
+    #     ret, frame = cap.read()
+    #     if not ret:
+    #         break
+    #
+    #     computed_frame, angle = angle_calc.get_angle(frame)
+    #
+    #     cv2.imshow("Vidra_car", computed_frame)
+    #     print(f'Angle: {angle}')
+    #     if cv2.waitKey(1) == ord('q'):
+    #         break
+    #
+    # cap.release()
+    # cv2.destroyAllWindows()
