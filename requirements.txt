@@ -1,16 +1,4 @@
-requests==2.26.0
-pyrebase4==4.5
---extra-index-url https://www.piwheels.org/simplew
-opencv-python==4.5.4.58 ; platform_machine != "aarch64" and platform_machine != "armv6l" and platform_machine != "armv7l" and python_version == "3.10"
-opencv-python==4.5.1.48 ; platform_machine != "aarch64" and platform_machine != "armv6l" and platform_machine != "armv7l" and python_version != "3.10"
-opencv-contrib-python==4.5.4.58 ; platform_machine != "aarch64" and platform_machine != "armv6l" and platform_machine != "armv7l" and python_version == "3.10"
-opencv-contrib-python==4.5.1.48 ; platform_machine != "aarch64" and platform_machine != "armv6l" and platform_machine != "armv7l" and python_version != "3.10"
-opencv-python==4.4.0.46 ; platform_machine == "armv6l" or platform_machine == "armv7l"
-opencv-contrib-python==4.4.0.46 ; platform_machine == "armv6l" or platform_machine == "armv7l"
--e ./depthai_sdk
---extra-index-url https://artifacts.luxonis.com/artifactory/luxonis-depthai-data-local/wheels/
-pyqt5>5,<5.15.6 ; platform_machine != "armv6l" and platform_machine != "armv7l" and platform_machine != "aarch64"
---extra-index-url https://artifacts.luxonis.com/artifactory/luxonis-python-snapshot-local/
-depthai==2.15.3.0.dev+7b7cd9224b0a31c684231e880beff9ae38bade6c
-numpy~=1.23.4
-matplotlib~=3.6.2
+# only for OAK-D camera, feel free to use any other camera and remove the depthai library
+depthai==2.24.0.0
+numpy==1.26.4
+opencv-python==4.9.0.80
