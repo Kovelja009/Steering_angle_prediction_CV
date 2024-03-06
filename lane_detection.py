@@ -14,8 +14,9 @@ class State:
         self.prev_state = 0
         self.n_frames = 0
         self.initial_shape = np.array(
-            [[(int(width * 0.15), height), (int(width * 0.35), int(height * 0.4)),
-              (int(width * 0.6), int(height * 0.4)), (int(width * 0.85), height)]])
+            # left_down, left_up, right_up, right_down <- points for region of interest
+            [[(int(width * 0.15), height-20), (int(width * 0.35), int(height * 0.34)),
+              (int(width * 0.6), int(height * 0.34)), (int(width * 0.85), height-20)]])
         self.last_shape = self.initial_shape
         self.danger = False  # occurs when we don't find any lane
 
@@ -36,16 +37,30 @@ class AngleCalculator:
             image = self._resize(image)
         canny_image = self._canny(image)
         cropped_image = self._region_of_interest(canny_image)
-        lines = cv2.HoughLinesP(cropped_image, rho=1, theta=np.pi / 180, threshold=100, minLineLength=30,
-                                maxLineGap=200)
+        lines = cv2.HoughLinesP(cropped_image, rho=1, theta=np.pi / 180, threshold=150, minLineLength=30,
+                                maxLineGap=90)
         left_line, right_line = self._average_slope_intercept(image, lines)
         central_line, angle = self._angle_calculator(image, left_line, right_line)
         if self.draw_lines:
-            image = self._display_lines(image, left_line, right_line, central_line)
+            image = self._drawing_lines(image, lines, left_line, right_line, central_line, angle)
 
         return image, angle
 
+    # draws hough lines, also average left and right lines, central line, angle or whether we have found any lines
+    def _drawing_lines(self, image, lines, left_line, right_line, central_line, angle):
+            if lines is not None:
+                for line in lines:
+                    x1, y1, x2, y2 = line.reshape(4)
+                    cv2.line(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            else:
+                cv2.putText(image, 'No lines detected', (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
+            image = self._display_lines(image, left_line, right_line, central_line)
+            cv2.putText(image, f'Angle: {angle}', (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
+            return image
+    
+
     def _angle_calculator(self, image, left_line, right_line):
+        # return self._temp_wo_states(image, left_line, right_line)
         # if angle is 90 degrees than k is infinite, so we add EPSYLON to ensure that we aren't deviding by zero
         k_left = 0
         k_right = 0
@@ -53,13 +68,13 @@ class AngleCalculator:
         n_right = 0
 
         # if we haven't found any line but have searched whole ROI, just go straight
-        if self.state.danger and self.state.prev_state == 0 and left_line is None and right_line is None:
+        if self.state.danger and left_line is None and right_line is None:
             self.state.prev_line = self.state.straight_line
             self.state.prev_angle = round(0.0, 2)
             return self.state.straight_line, self.state.prev_angle
 
         # if we haven't found any lines (maybe because of noise in image) but want to keep previous angle
-        if left_line is None and right_line is None:
+        elif left_line is None and right_line is None:
             return self.state.prev_line, self.state.prev_angle
         x1, y1, x2, y2 = 0, 0, 0, 0
         ########################
@@ -99,7 +114,7 @@ class AngleCalculator:
         return central_line, adjusted_angle
 
     def _dynamic_ROI(self):
-        if self.state.n_frames >= 24:  # should aproximately be about 1 sec
+        if self.state.n_frames >= 15:  # should aproximately be about 1 sec (depends on fps)
             self.state.n_frames = 0
             self.state.prev_state = 0
             self.state.danger = False
@@ -120,7 +135,7 @@ class AngleCalculator:
                 if k < 0:
                     left_lines.append((k, n))
                 else:
-                    right_lines.append((k, n))  # [slope1, intercept1]
+                    right_lines.append((k, n))               # [slope1, intercept1]
         #   axis = 0 means we are doing average column wise -> [slope2, intercept2]
         left_line = None
         right_line = None
@@ -137,15 +152,11 @@ class AngleCalculator:
         if len(left_lines) == 0 and len(right_lines) == 0:  # no lines detected in this frame
             edge_case = True
             self.state.n_frames += 1
-            if self.state.n_frames >= 10 and self.state.prev_state == 0:  # if we haven't find them for more than 5 frames then we change state
+            if self.state.n_frames >= 5:  # if we haven't find them for more than 5 frames then we change state
                 self.state.last_shape = self.state.initial_shape
                 self.state.prev_state = 0
-                self.state.danger = False
-                self.state.n_frames = 0
-            else:  # then just use previous shape <- trying to prevent noise
-                if self.state.n_frames == 9 and self.state.danger:
-                    self.state.prev_state = 0
                 self.state.danger = True
+                self.state.n_frames = 0
         ##################### detected one line
         if (len(left_lines) == 0 and len(right_lines) != 0) or (len(left_lines) != 0 and len(right_lines) == 0):
             edge_case = True
@@ -184,10 +195,11 @@ class AngleCalculator:
 
     # sometimes there are some points that are out of bounds, so we need to check that and constrain them
     def _fast_check(self, width, height, x1, y1, x2, y2):
-        x1 = max(0, min(x1, width))
-        x2 = max(0, min(x2, width))
-        y1 = max(0, min(y1, height))
-        y2 = max(0, min(y2, height))
+        x1 = int(max(0, min(x1, width)))
+        x2 = int(max(0, min(x2, width)))
+        y1 = int(max(0, min(y1, height)))
+        y2 = int(max(0, min(y2, height)))
+
 
         return x1, y1, x2, y2
 
@@ -250,34 +262,59 @@ class AngleCalculator:
         return np.array([x1, y1, x2, y2])
 
 
+# pipeline for interacting with OAK-D camera
+def oak_d_pipeline():
+    oak_d = oak.OAK_D()
+    angle_calc = AngleCalculator(height=1080, width=1920, resize=0.4, decay=0.7, draw_lines=True)
+    while True:
+        frame = oak_d.get_color_frame(show_fps=True)
+        computed_frame, angle = angle_calc.get_angle(frame)
+        cv2.imshow("Vidra_car", computed_frame)
+        if cv2.waitKey(1) == ord('q'):
+            break
+    cv2.destroyAllWindows()
+
+
+# saving video as mp4
+def save_video(frames, height, width, name):
+    out = cv2.VideoWriter(name, cv2.VideoWriter_fourcc(*'mp4v'), 30, (width, height))
+    for frame in frames:
+        out.write(frame)
+    out.release()
+    print("Video saved")
+
+# NOTE: decay is not visible on the image just by looking at central line,
+# but can be observed by looking at the angle in the top left corner
+
 if __name__ == '__main__':
-    # pipeline for interacting with OAK-D camera
-    # oak_d = oak.OAK_D()
-    # angle_calc = AngleCalculator(height=1080, width=1920, resize=0.4, decay=0.7, draw_lines=True)
-    # while True:
-    #     frame = oak_d.get_color_frame(show_fps=True)
-    #     computed_frame, angle = angle_calc.get_angle(frame)
-    #     cv2.imshow("Vidra_car", computed_frame)
-    #     print(f'Angle: {angle}')
-    #     if cv2.waitKey(1) == ord('q'):
-    #         break
-    # cv2.destroyAllWindows()
+    should_save = True
+    frames = []
 
     # pipeline for reading from classic video
-
-    cap = cv2.VideoCapture("test_video1.mp4")
-    angle_calc = AngleCalculator(height=720, width=1280, resize=0.4, decay=0.7, draw_lines=True)
+    cap = cv2.VideoCapture("test_video5.mp4")
+    
+    # Get height and width of frames
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    
+    angle_calc = AngleCalculator(height=height, width=width, resize=1, decay=0.7, draw_lines=True)
+    height, width = angle_calc.height, angle_calc.width
+    
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
     
         computed_frame, angle = angle_calc.get_angle(frame)
-    
+        if should_save:
+            frames.append(computed_frame)    
         cv2.imshow("Vidra_car", computed_frame)
-        print(f'Angle: {angle}')
         if cv2.waitKey(1) == ord('q'):
             break
     
     cap.release()
     cv2.destroyAllWindows()
+
+    if should_save:
+        print("Saving video...")
+        save_video(frames=frames, height=height, width=width, name="output.mp4")
