@@ -4,6 +4,7 @@ import OAK_D_api as oak
 import cv2
 import numpy as np
 import math
+import time
 
 class State:
     # possible states: 0 <- initial polygon, 1 <- one lane detected, 2 <- two lanes detected
@@ -13,10 +14,11 @@ class State:
         self.prev_line = self.straight_line
         self.prev_state = 0
         self.n_frames = 0
+        self.horizon_height = int(height * 0.4)
         self.initial_shape = np.array(
-            # left_down, left_up, right_up, right_down <- points for region of interest
-            [[(int(width * 0.15), height-20), (int(width * 0.35), int(height * 0.34)),
-              (int(width * 0.6), int(height * 0.34)), (int(width * 0.85), height-20)]])
+            # left_down1, left_down2, left_up, right_up, right_down1, right_down2 <- points for region of interest
+            [[(int(0), int(height)),(int(0), int(height * 0.8)), (int(width * 0.20), int(self.horizon_height)),
+              (int(width * 0.8), int(self.horizon_height)), (int(width), int(height * 0.8)), (int(width), int(height))]])
         self.last_shape = self.initial_shape
         self.danger = False  # occurs when we don't find any lane
 
@@ -60,7 +62,6 @@ class AngleCalculator:
     
 
     def _angle_calculator(self, image, left_line, right_line):
-        # return self._temp_wo_states(image, left_line, right_line)
         # if angle is 90 degrees than k is infinite, so we add EPSYLON to ensure that we aren't deviding by zero
         k_left = 0
         k_right = 0
@@ -179,7 +180,11 @@ class AngleCalculator:
     def _region_of_interest(self, image):
         polygon = self._dynamic_ROI()
         mask = np.zeros_like(image)
-        cv2.fillPoly(mask, polygon, 255)
+        for pol in polygon: # if we have more polygons, we need to fill them separately, because they might overlap
+            temp_mask = np.zeros_like(image)
+            cv2.fillPoly(temp_mask, [pol], 255)
+            mask = cv2.bitwise_or(mask, temp_mask)
+            # cv2.fillPoly(mask, [pol], 255)
         cv2.imshow("mask", mask)
         mask = cv2.bitwise_and(mask, image)
         cv2.imshow("ROI", mask)
@@ -188,7 +193,7 @@ class AngleCalculator:
     def _canny(self, image):
         gray_image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
         # blur = cv2.GaussianBlur(gray_image, (5, 5), 0) # cv2.Canny already does blurring in
-        canny = cv2.Canny(gray_image, 70, 150)
+        canny = cv2.Canny(gray_image, 100, 150)
         cv2.imshow("canny", canny)
         return canny
 
@@ -218,16 +223,21 @@ class AngleCalculator:
         x1, y1, x2, y2 = central_line
         cv2.line(line_image, pt1=(x1, y1), pt2=(x2, y2), color=(255, 0, 100), thickness=10)
 
-        cv2.fillPoly(roi_image, pts=self.state.last_shape, color=(0, 255, 0))
+        for pol in self.state.last_shape:
+            temp_mask = np.zeros_like(image)
+            cv2.fillPoly(temp_mask, pts=[pol], color=(0, 255, 0))
+            roi_image = cv2.bitwise_or(roi_image, temp_mask)
         line_image = cv2.addWeighted(line_image, 1, roi_image, 0.2, 1)
 
         combo_image = cv2.addWeighted(image, 0.8, line_image, 1, 1)
         return combo_image
 
+
     def _resize(self, image):
         dim = (self.width, self.height)
         output = cv2.resize(image, dim)
         return output
+
 
     def _new_shape(self, first_line, second_line=None):
         x1, y1, x2, y2 = first_line
@@ -236,6 +246,11 @@ class AngleCalculator:
         lu_x = max(0, x2 - offset)
         rd_x = min(self.width, x1 + offset)
         ru_x = min(self.width, x2 + offset)
+        # if left down > right down, then we have to swap them
+        if ld_x > rd_x:
+            temp = ld_x
+            ld_x = rd_x
+            rd_x = temp
         if second_line is None:
             return np.array(
                 [[(ld_x, y1), (lu_x, y2), (ru_x, y2), (rd_x, y1)]]
@@ -246,6 +261,11 @@ class AngleCalculator:
             lu_xx = max(0, xx2 - offset)
             rd_xx = min(self.width, xx1 + offset)
             ru_xx = min(self.width, xx2 + offset)
+            # if left down > right down, then we have to swap them
+            if ld_xx > rd_xx:
+                temp = ld_xx
+                ld_xx = rd_xx
+                rd_xx = temp
             return np.array(
                 [[(ld_x, y1), (lu_x, y2), (ru_x, y2), (rd_x, y1)],
                  [(ld_xx, yy1), (lu_xx, yy2), (ru_xx, yy2), (rd_xx, yy1)]]
@@ -254,7 +274,7 @@ class AngleCalculator:
     def _make_coordinates(self, param):
         k, n = param
         y1 = self.height  # starts at the bottom of the image
-        y2 = int(y1 / 2)  # finishes above y1
+        y2 = int(self.state.horizon_height)  # finishes above y1
 
         # using formula y = kx + n
         x1 = int((y1 - n) / k)
@@ -287,17 +307,17 @@ def save_video(frames, height, width, name):
 # but can be observed by looking at the angle in the top left corner
 
 if __name__ == '__main__':
-    should_save = True
+    should_save = False
     frames = []
 
     # pipeline for reading from classic video
-    cap = cv2.VideoCapture("test_video5.mp4")
+    cap = cv2.VideoCapture("bfmc_1.mp4")
     
     # Get height and width of frames
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     
-    angle_calc = AngleCalculator(height=height, width=width, resize=1, decay=0.7, draw_lines=True)
+    angle_calc = AngleCalculator(height=height, width=width, resize=1, decay=0.2, draw_lines=True)
     height, width = angle_calc.height, angle_calc.width
     
     while cap.isOpened():
@@ -309,6 +329,7 @@ if __name__ == '__main__':
         if should_save:
             frames.append(computed_frame)    
         cv2.imshow("Vidra_car", computed_frame)
+        # time.sleep(0.05)
         if cv2.waitKey(1) == ord('q'):
             break
     
@@ -318,3 +339,4 @@ if __name__ == '__main__':
     if should_save:
         print("Saving video...")
         save_video(frames=frames, height=height, width=width, name="output.mp4")
+
