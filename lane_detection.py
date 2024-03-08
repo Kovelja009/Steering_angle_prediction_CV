@@ -33,6 +33,7 @@ class AngleCalculator:
         self.EPSYLON = 0.000001
         self.decay = decay
         self.state = State(self.height, self.width)
+        self.sharp_angles = (-40, 40)
 
     def get_angle(self, image):
         if self.resize != 1.0:
@@ -61,6 +62,22 @@ class AngleCalculator:
             return image
     
 
+    def _single_line_angle_calc(self, x1, x2, y2, isLeft=True):
+        diff_x = abs(self.width / 2 - x1)
+        if isLeft:
+            x1_temp = int(x1 + diff_x)
+            x2_temp = int(x2 + diff_x)
+        else:
+            x1_temp = int(x1 - diff_x)
+            x2_temp = int(x2 - diff_x) 
+
+        dx = int(x2_temp - self.width / 2)
+        dy = int(y2 - self.height)
+        theta = math.atan2(dy, dx)
+        angle = math.degrees(theta) + 90
+
+        return angle, x1_temp, x2_temp 
+
     def _angle_calculator(self, image, left_line, right_line):
         # if angle is 90 degrees than k is infinite, so we add EPSYLON to ensure that we aren't deviding by zero
         k_left = 0
@@ -81,38 +98,60 @@ class AngleCalculator:
         ########################
         # ensuring safety via checking line availability: if we find
         # just one line, we will stick to that one
-        if left_line is not None:
-            x1, y1, x2, y2 = left_line
-        else:
-            x1, y1, x2, y2 = self.state.straight_line
-        k_left = (y2 - y1) / (x2 - x1 + self.EPSYLON)
-        n_left = y1 - (k_left * x1)
-        if right_line is not None:
-            x1, y1, x2, y2 = right_line
-        else:
-            x1, y1, x2, y2 = self.state.straight_line
         ########################
-        k_right = (y2 - y1) / (x2 - x1 + self.EPSYLON)
-        n_right = y1 - (k_right * x1)
+        if (left_line is not None and right_line is None) or (right_line is not None and left_line is None):
+            # only left line is found
+            if left_line is not None:
+                x1, y1, x2, y2 = left_line
+                angle, x1_temp, x2_temp = self._single_line_angle_calc(x1, x2, y2, isLeft=True)
+            else: # only right line is found
+                x1, y1, x2, y2 = right_line
+                angle, x1_temp, x2_temp = self._single_line_angle_calc(x1, x2, y2, isLeft=False)
 
-        # calculating where 2 lines intersect
-        intersection_x = (n_right - n_left) / (k_left - k_right + self.EPSYLON)
-        intersection_y = k_left * intersection_x + n_left
 
-        central_line = int(self.width / 2), int(self.height), int(intersection_x), int(intersection_y)
-        dx = int(intersection_x - self.width / 2)
-        dy = int(intersection_y - self.height)
-        theta = math.atan2(dy, dx)
-        angle = math.degrees(theta) + 90
+            if angle < self.sharp_angles[0] or angle > self.sharp_angles[1]: # if angle is too big, we will stick to that line
+                central_line = x1_temp, y1, x2_temp, y2
+            else: # else we will go straight
+                central_line = self.state.straight_line
+                angle = 0.0
+            self.state.prev_line = central_line
+            curr_angle = round(angle, 2)
 
-        self.state.prev_line = central_line
-        curr_angle = round(angle, 2)
+            # does smoothing for steering by not allowing for great fluctuation between frames
+            adjusted_angle = round(self.state.prev_angle * self.decay + (1 - self.decay) * curr_angle, 2)
+            self.state.prev_angle = adjusted_angle
 
-        # does smoothing for steering by not allowing for great fluctuation between frames
-        adjusted_angle = round(self.state.prev_angle * self.decay + (1 - self.decay) * curr_angle, 2)
-        self.state.prev_angle = adjusted_angle
+            return central_line, adjusted_angle
+        ########################
+        # both lines are found
+        ########################
+        else:
+            x1, y1, x2, y2 = left_line
+            k_left = (y2 - y1) / (x2 - x1 + self.EPSYLON)
+            n_left = y1 - (k_left * x1)
 
-        return central_line, adjusted_angle
+            x1, y1, x2, y2 = right_line
+            k_right = (y2 - y1) / (x2 - x1 + self.EPSYLON)
+            n_right = y1 - (k_right * x1)
+
+            intersection_x = (n_right - n_left) / (k_left - k_right + self.EPSYLON)
+            intersection_y = k_left * intersection_x + n_left
+            central_line = int(self.width / 2), int(self.height), int(intersection_x), int(intersection_y)
+        
+            dx = int(intersection_x - self.width / 2)
+            dy = int(intersection_y - self.height)
+            theta = math.atan2(dy, dx)
+            angle = math.degrees(theta) + 90
+
+            self.state.prev_line = central_line
+            curr_angle = round(angle, 2)
+
+            # does smoothing for steering by not allowing for great fluctuation between frames
+            adjusted_angle = round(self.state.prev_angle * self.decay + (1 - self.decay) * curr_angle, 2)
+            self.state.prev_angle = adjusted_angle
+
+            return central_line, adjusted_angle
+
 
     def _dynamic_ROI(self):
         if self.state.n_frames >= 15:  # should aproximately be about 1 sec (depends on fps)
@@ -311,7 +350,7 @@ if __name__ == '__main__':
     frames = []
 
     # pipeline for reading from classic video
-    cap = cv2.VideoCapture("bfmc_1.mp4")
+    cap = cv2.VideoCapture("bfmc_2.mp4")
     
     # Get height and width of frames
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -339,4 +378,3 @@ if __name__ == '__main__':
     if should_save:
         print("Saving video...")
         save_video(frames=frames, height=height, width=width, name="output.mp4")
-
